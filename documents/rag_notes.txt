@@ -1,0 +1,8 @@
+RAG stands for Retrieval-Augmented Generation.
+It solves the problem of AI models answering from stale training data.
+The pattern has three steps: ingest, retrieve, and generate.
+Ingestion breaks documents into chunks and converts them to vector embeddings.
+Retrieval finds the most semantically similar chunks for a given query.
+Generation uses the retrieved chunks as context to produce a grounded answer.
+RAG prevents hallucination by anchoring answers in real documents.
+The quality of chunking and embedding directly affects answer quality.

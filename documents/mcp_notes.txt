@@ -1,0 +1,4 @@
+MCP stands for Model Context Protocol.
+It is an open standard for connecting AI models to external tools.
+Tools are registered with decorators and described with docstrings.
+The MCP Inspector is used to test tools during development.

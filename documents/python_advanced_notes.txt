@@ -1,0 +1,8 @@
+Decorators in Python wrap functions to add behavior without modifying them.
+The @dataclass decorator auto-generates __init__, __repr__, and __eq__ methods.
+Context managers use __enter__ and __exit__ to guarantee setup and teardown.
+List comprehensions are compact alternatives to for loops that build lists.
+Type hints are optional annotations that improve IDE support and readability.
+The pathlib.Path class provides an object-oriented interface to file system paths.
+Virtual environments isolate Python project dependencies from the global interpreter.
+f-strings allow expression interpolation inside string literals using curly braces.
