@@ -2,7 +2,7 @@ import os
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
-from rag.retriever import RetrievedChunk
+from .retriever import RetrievedChunk
 from typing_extensions import TypedDict
 
 load_dotenv()

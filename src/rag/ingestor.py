@@ -1,6 +1,27 @@
 from pathlib import Path
-from rag.chunker import chunk_text
-from rag.embedder import embed_and_store, clear_collection
+import fitz
+from .chunker import chunk_text
+from .embedder import embed_and_store, clear_collection
+
+def _read_file(file_path: Path) -> str:
+    """
+    Extract text from a file, handling both .txt and .pdf formats.
+    
+    This is a 'dispatch' pattern — one function that routes to the
+    right implementation based on the file type. Common in Python
+    when you want callers to not care about the underlying format.
+    """
+    if file_path.suffix == ".txt":
+        return file_path.read_text(encoding="utf-8")
+
+    elif file_path.suffix == ".pdf":
+        doc = fitz.open(str(file_path))            # open the PDF
+        pages = [page.get_text() for page in doc]   # extract text per page
+        doc.close()                    # always close file handles
+        return "\n".join(pages)       # join pages into one string
+    
+    else:
+        raise ValueError(f"Unsupported file type: {file_path.suffix}")
 
 def ingest_documents(documents_dir: Path) -> dict:
     """
@@ -13,12 +34,17 @@ def ingest_documents(documents_dir: Path) -> dict:
             "message": f"Directory not found: {documents_dir}"
         }
     
-    txt_files = [f for f in documents_dir.iterdir() if f.suffix == ".txt"]
+    # Collect both .txt and .pdf files
+    supported_extensions = {".txt", ".pdf"}
+    files = [
+        f for f in documents_dir.iterdir()
+        if f.suffix in supported_extensions
+    ]
 
-    if not txt_files:
+    if not files:
         return {
             "status": "error",
-            "message": f"No .txt files found in {documents_dir}"
+            "message": f"No .txt or .pdf files found in {documents_dir}"
         }
     
     # Wipe existing vectors so re-ingesting is always a clean slate
@@ -27,15 +53,22 @@ def ingest_documents(documents_dir: Path) -> dict:
     total_chunks = 0
     processed_files = []
 
-    for file_path in txt_files:
-        text = file_path.read_text(encoding="utf-8")
-        chunks = chunk_text(text, filename=file_path.name)
-        count = embed_and_store(chunks)
+    for file_path in files:
+        try:
+            text = _read_file(file_path)
+            chunks = chunk_text(text, filename=file_path.name)
+            count = embed_and_store(chunks)
 
-        total_chunks += count
-        processed_files.append({"filename": file_path.name, "chunks": count})
+            total_chunks += count
+            processed_files.append({"filename": file_path.name, "chunks": count})
 
-        print(f" Ingested {file_path.name} -> {count} chunks")
+            print(f" Ingested {file_path.name} -> {count} chunks")
+
+        except Exception as e:
+            # Don't let one bad file stop the whole ingest
+            print(f"Failed to ingest {file_path.name}: {e}")
+            processed_files.append({"filename": file_path.name, "error": str(e)})
+    
 
     return {
         "status": "ok",

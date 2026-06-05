@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from rag.config import CHUNK_SIZE, CHUNK_OVERLAP
+from .config import CHUNK_SIZE, CHUNK_OVERLAP
 
 @dataclass
 class Chunk:

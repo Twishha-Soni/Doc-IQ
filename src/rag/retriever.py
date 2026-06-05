@@ -1,6 +1,6 @@
 from dataclasses import dataclass
-from rag.embedder import _get_collection, _model
-from rag.config import TOP_K_RESULTS
+from .embedder import _get_collection, _model
+from .config import TOP_K_RESULTS
 
 @dataclass
 class RetrievedChunk:

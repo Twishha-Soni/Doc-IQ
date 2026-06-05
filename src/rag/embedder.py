@@ -1,7 +1,7 @@
 import chromadb
 from sentence_transformers import SentenceTransformer
-from rag.chunker import Chunk
-from rag.config import EMBEDDING_MODEL
+from .chunker import Chunk
+from .config import EMBEDDING_MODEL
 
 # Load the embedding model once at module level.
 # This is like a Spring @Bean singleton — created once, reused everywhere.

@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Document Intelligence Assistant</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ── Header ── -->
+  <header>
+    <div class="logo">
+      <div class="logo-icon">⬡</div>
+      <span class="logo-text">Doc<span>IQ</span></span>
+    </div>
+    <div class="status-pill">
+      <div class="status-dot" id="statusDot"></div>
+      <span id="statusText">idle</span>
+    </div>
+  </header>
+
+  <!-- ── Main ── -->
+  <main>
+
+    <!-- ── Sidebar ── -->
+    <aside class="sidebar">
+
+      <!-- Upload card -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Upload</span>
+        </div>
+        <div class="card-body">
+          <div class="upload-zone" id="uploadZone">
+            <input type="file" id="fileInput" accept=".txt,.pdf" multiple />
+            <div class="upload-icon">↑</div>
+            <div class="upload-label">
+              <strong>Click to upload</strong> or drag & drop
+            </div>
+            <div class="upload-hint">.txt · .pdf</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Ingest card -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Vector Store</span>
+          <button class="btn btn-ghost" id="refreshDocsBtn" style="width:auto;padding:4px 10px;font-size:0.72rem;">↻ Refresh</button>
+        </div>
+        <div class="card-body">
+          <div class="doc-list" id="docList">
+            <div class="doc-empty">No documents yet</div>
+          </div>
+          <button class="btn btn-primary" id="ingestBtn" style="margin-top:14px;">
+            ⚡ Ingest documents
+          </button>
+          <div class="ingest-result" id="ingestResult"></div>
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- ── Chat panel ── -->
+    <section class="chat-panel">
+
+      <div class="messages" id="messages">
+        <div class="empty-state" id="emptyState">
+          <div class="empty-icon">◈</div>
+          <p>Upload your documents, hit <code>Ingest</code>, then ask anything about them.</p>
+        </div>
+      </div>
+
+      <div class="input-bar">
+        <textarea
+          id="questionInput"
+          placeholder="Ask a question about your documents…"
+          rows="1"
+        ></textarea>
+        <button class="send-btn" id="sendBtn" title="Send">➔</button>
+      </div>
+
+    </section>
+
+  </main>
+</div>
+
+<!-- ── Toast container ── -->
+<div class="toast-container" id="toastContainer"></div>
+
+
+<script>
+  // ── State ──────────────────────────────────────────────────────────────────
+  // Conversation history passed to /ask so follow-up questions work correctly.
+  // Each entry is { role: "user"|"assistant", content: "..." }
+  const history = [];
+
+  // ── DOM refs ───────────────────────────────────────────────────────────────
+  const statusDot      = document.getElementById('statusDot');
+  const statusText     = document.getElementById('statusText');
+  const uploadZone     = document.getElementById('uploadZone');
+  const fileInput      = document.getElementById('fileInput');
+  const docList        = document.getElementById('docList');
+  const refreshDocsBtn = document.getElementById('refreshDocsBtn');
+  const ingestBtn      = document.getElementById('ingestBtn');
+  const ingestResult   = document.getElementById('ingestResult');
+  const messages       = document.getElementById('messages');
+  const emptyState     = document.getElementById('emptyState');
+  const questionInput  = document.getElementById('questionInput');
+  const sendBtn        = document.getElementById('sendBtn');
+  const toastContainer = document.getElementById('toastContainer');
+
+  // ── Status helpers ─────────────────────────────────────────────────────────
+  function setStatus(state, label) {
+    statusDot.className = `status-dot ${state}`;
+    statusText.textContent = label;
+  }
+
+  // ── Toast ──────────────────────────────────────────────────────────────────
+  function toast(message, type = 'info', duration = 3500) {
+    const el = document.createElement('div');
+    el.className = `toast ${type}`;
+    el.textContent = message;
+    toastContainer.appendChild(el);
+    setTimeout(() => el.remove(), duration);
+  }
+
+  // ── Document list ──────────────────────────────────────────────────────────
+  async function loadDocuments() {
+    try {
+      const res  = await fetch('/documents');
+      const data = await res.json();
+      renderDocList(data.documents || []);
+    } catch {
+      renderDocList([]);
+    }
+  }
+
+  function renderDocList(files) {
+    if (!files.length) {
+      docList.innerHTML = '<div class="doc-empty">No documents yet</div>';
+      return;
+    }
+    docList.innerHTML = files.map(name => {
+      const ext = name.split('.').pop().toLowerCase();
+      return `
+        <div class="doc-item">
+          <span class="doc-ext ${ext}">${ext}</span>
+          <span class="doc-name" title="${name}">${name}</span>
+        </div>`;
+    }).join('');
+  }
+
+  // ── File upload ────────────────────────────────────────────────────────────
+  // Drag-and-drop visual feedback
+  uploadZone.addEventListener('dragover', e => {
+    e.preventDefault();
+    uploadZone.classList.add('drag-over');
+  });
+  uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+  uploadZone.addEventListener('drop', e => {
+    e.preventDefault();
+    uploadZone.classList.remove('drag-over');
+    uploadFiles(e.dataTransfer.files);
+  });
+
+  fileInput.addEventListener('change', () => uploadFiles(fileInput.files));
+
+  async function uploadFiles(files) {
+    if (!files.length) return;
+
+    setStatus('busy', 'uploading…');
+
+    // Upload each file sequentially
+    for (const file of files) {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const res  = await fetch('/upload', { method: 'POST', body: formData });
+        const data = await res.json();
+
+        if (data.status === 'ok') {
+          toast(`Uploaded ${file.name}`, 'success');
+        } else {
+          toast(`${file.name}: ${data.message}`, 'error');
+        }
+      } catch {
+        toast(`Failed to upload ${file.name}`, 'error');
+      }
+    }
+
+    setStatus('ready', 'ready');
+    fileInput.value = '';
+    loadDocuments();
+  }
+
+  // ── Ingest ─────────────────────────────────────────────────────────────────
+  ingestBtn.addEventListener('click', async () => {
+    ingestBtn.disabled = true;
+    ingestResult.className = 'ingest-result';
+    setStatus('busy', 'ingesting…');
+
+    try {
+      const res  = await fetch('/ingest', { method: 'POST' });
+      const data = await res.json();
+
+      if (data.status === 'ok') {
+        const summary = data.details
+          .map(d => d.error
+            ? `✗ ${d.filename}`
+            : `✓ ${d.filename} (${d.chunks} chunks)`)
+          .join('\n');
+
+        ingestResult.textContent = `${data.total_chunks} chunks indexed\n\n${summary}`;
+        ingestResult.className   = 'ingest-result ok show';
+        toast(`Indexed ${data.total_chunks} chunks`, 'success');
+        setStatus('ready', 'ready');
+      } else {
+        ingestResult.textContent = data.message;
+        ingestResult.className   = 'ingest-result error show';
+        setStatus('error', 'error');
+      }
+    } catch (err) {
+      ingestResult.textContent = 'Network error — is the server running?';
+      ingestResult.className   = 'ingest-result error show';
+      setStatus('error', 'error');
+    }
+
+    ingestBtn.disabled = false;
+  });
+
+  // ── Chat ───────────────────────────────────────────────────────────────────
+  // Auto-grow textarea as user types
+  questionInput.addEventListener('input', () => {
+    questionInput.style.height = 'auto';
+    questionInput.style.height = questionInput.scrollHeight + 'px';
+  });
+
+  // Send on Enter, newline on Shift+Enter
+  questionInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendQuestion();
+    }
+  });
+
+  sendBtn.addEventListener('click', sendQuestion);
+
+  async function sendQuestion() {
+    const question = questionInput.value.trim();
+    if (!question) return;
+
+    // Remove empty state on first message
+    emptyState?.remove();
+
+    // Append user bubble
+    appendMessage('user', question);
+
+    // Add to history before the request
+    history.push({ role: 'user', content: question });
+
+    // Reset input
+    questionInput.value = '';
+    questionInput.style.height = 'auto';
+    sendBtn.disabled = true;
+    setStatus('busy', 'thinking…');
+
+    // Show thinking indicator
+    const thinkingEl = appendThinking();
+
+    try {
+      const res  = await fetch('/ask', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ question, history })
+      });
+      const data = await res.json();
+
+      thinkingEl.remove();
+
+      if (data.status === 'ok') {
+        appendMessage('assistant', data.answer, data.sources || []);
+        history.push({ role: 'assistant', content: data.answer });
+        setStatus('ready', 'ready');
+      } else {
+        appendMessage('assistant', `⚠ ${data.message}`);
+        setStatus('error', 'error');
+      }
+    } catch {
+      thinkingEl.remove();
+      appendMessage('assistant', '⚠ Network error — is the server running?');
+      setStatus('error', 'error');
+    }
+
+    sendBtn.disabled = false;
+    scrollToBottom();
+  }
+
+  // ── Message rendering ──────────────────────────────────────────────────────
+  function appendMessage(role, text, sources = []) {
+    const wrapper = document.createElement('div');
+    wrapper.className = `message ${role}`;
+
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    bubble.textContent = text;
+    wrapper.appendChild(bubble);
+
+    // Render source chips below assistant messages
+    if (role === 'assistant' && sources.length) {
+      const sourcesEl = document.createElement('div');
+      sourcesEl.className = 'sources';
+      sources.forEach(src => {
+        sourcesEl.appendChild(buildSourceChip(src));
+      });
+      wrapper.appendChild(sourcesEl);
+    }
+
+    messages.appendChild(wrapper);
+    scrollToBottom();
+    return wrapper;
+  }
+
+  function buildSourceChip(src) {
+    const pct = Math.round((src.similarity || 0) * 100);
+
+    const chip = document.createElement('div');
+    chip.className = 'source-chip';
+    chip.innerHTML = `
+      <div class="source-chip-top">
+        <span class="source-filename">${src.filename}</span>
+        <span class="source-score">${pct}%</span>
+      </div>
+      <div class="source-bar-track">
+        <div class="source-bar-fill" style="width: ${pct}%"></div>
+      </div>
+      <div class="source-preview">${src.text || ''}</div>
+    `;
+    return chip;
+  }
+
+  function appendThinking() {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'message assistant';
+    wrapper.innerHTML = `
+      <div class="thinking">
+        <div class="thinking-dots">
+          <span></span><span></span><span></span>
+        </div>
+        thinking
+      </div>`;
+    messages.appendChild(wrapper);
+    scrollToBottom();
+    return wrapper;
+  }
+
+  function scrollToBottom() {
+    messages.scrollTop = messages.scrollHeight;
+  }
+
+  // ── Refresh button ─────────────────────────────────────────────────────────
+  refreshDocsBtn.addEventListener('click', () => {
+    loadDocuments();
+    toast('Document list refreshed', 'info');
+  });
+
+  // ── Init ───────────────────────────────────────────────────────────────────
+  loadDocuments();
+  setStatus('ready', 'ready');
+</script>
+
+</body>
+</html>
