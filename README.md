@@ -1,3 +1,5 @@
+<img width="1338" height="153" alt="ChatGPT Image Jun 5, 2026, 06_58_26 PM (1)" src="https://github.com/user-attachments/assets/7dc6ba80-43a2-4f72-bbfc-10fe3c761b1b" />
+
 # DocIQ — Document Intelligence Assistant
 
 A full-stack RAG (Retrieval-Augmented Generation) application that lets you upload documents, index them into a vector store, and ask natural-language questions — with cited, grounded answers powered by Gemini.
